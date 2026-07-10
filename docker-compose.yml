@@ -1,28 +1,27 @@
-version: '3.8'
-
 services:
-  redis:
+  ddos-nginx:
+    image: nginx:latest
+    ports:
+      - "80:80"
+    volumes:
+      - nginx-logs:/var/log/nginx
+    command: /bin/sh -c "rm -f /var/log/nginx/access.log /var/log/nginx/error.log && nginx -g 'daemon off;'"
+
+  ddos-redis:
     image: redis:alpine
     container_name: ddos-redis
     ports:
       - "6379:6379"
 
-  openresty:
-    image: openresty/openresty:alpine
-    container_name: ddos-nginx
-    ports:
-      - "80:80"
-    volumes:
-      - ./nginx.conf:/usr/local/openresty/nginx/conf/nginx.conf:ro
-      - nginx-logs:/var/log/nginx
-
   ml-detector:
     build: .
     container_name: ddos-ml-engine
-    depends_on:
-      - redis
     volumes:
-      - nginx-logs:/var/log/nginx:ro
+      - nginx-logs:/var/log/nginx
+    environment:
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      - ddos-redis
 
 volumes:
   nginx-logs:

@@ -20,7 +20,7 @@ def parse_logs():
         print(f"[📋 Log Debug] Total raw lines found in access.log: {len(lines)}")
             
         for line in lines:
-            # 💡 FIX: Robust regex that grabs the IP whether it's IPv4, IPv6 (::1), or Docker Gateway
+            # Grab the IP whether it's IPv4, IPv6 (::1), or Docker Gateway
             match = re.match(r'^(\S+)', line)
             if match:
                 ip = match.group(1)
@@ -56,7 +56,7 @@ def run_ml_defense():
         if current_ip in ["192.168.1.99", "192.168.1.150"]:
             continue
             
-        # 🚨 BAN TRIGGER: If ML flags it as an anomaly OR if it exceeds 20 requests
+        # BAN TRIGGER: If ML flags it as an anomaly OR if it exceeds 20 requests
         if pred == -1 or request_count > 20: 
             print(f"[🚨 ML SHIELD] Outlier Detected! Banning IP: {current_ip} (Requests: {request_count})")
             r.setex(f"ban:{current_ip}", 300, "1")

@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:alpine
+    container_name: ddos-redis
+    ports:
+      - "6379:6379"
+
+  openresty:
+    image: openresty/openresty:alpine
+    container_name: ddos-nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/usr/local/openresty/nginx/conf/nginx.conf:ro
+      - nginx-logs:/var/log/nginx
+
+  ml-detector:
+    build: .
+    container_name: ddos-ml-engine
+    depends_on:
+      - redis
+    volumes:
+      - nginx-logs:/var/log/nginx:ro
+
+volumes:
+  nginx-logs:

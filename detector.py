@@ -11,56 +11,58 @@ r = redis.Redis(host='ddos-redis', port=6379, db=0, decode_responses=True)
 LOG_FILE_PATH = "/var/log/nginx/access.log"
 
 def parse_logs():
-    """Parses Nginx logs and counts requests per IP in the last window."""
+    """Parses Nginx logs and counts requests per IP."""
     ip_counts = {}
     try:
         with open(LOG_FILE_PATH, "r") as f:
             lines = f.readlines()
             
-        # Extract IP addresses using Regex
+        print(f"[📋 Log Debug] Total raw lines found in access.log: {len(lines)}")
+            
         for line in lines:
-            match = re.match(r'^(\d+\.\d+\.\d+\.\d+)', line)
+            # 💡 FIX: Robust regex that grabs the IP whether it's IPv4, IPv6 (::1), or Docker Gateway
+            match = re.match(r'^(\S+)', line)
             if match:
                 ip = match.group(1)
                 ip_counts[ip] = ip_counts.get(ip, 0) + 1
     except FileNotFoundError:
-        # If log file doesn't exist yet, return empty data
+        print("[📋 Log Debug] access.log file not found yet. Waiting for first web request...")
         pass
     return ip_counts
 
 def run_ml_defense():
-    print("[🧠 ML Engine] Analyzing traffic fingerprints...")
+    print("\n[🧠 ML Engine] Analyzing traffic fingerprints...")
     ip_data = parse_logs()
     
-    # 💡 INJECT FAKE TRAFFIC: Gives the ML model a baseline of "normal" users
-    ip_data["192.168.1.99"] = 2   # Fake User A (Sent 2 requests)
-    ip_data["192.168.1.150"] = 4  # Fake User B (Sent 4 requests)
+    if ip_data:
+        print(f"[📋 Log Debug] Active IPs found in logs: {ip_data}")
     
-    if len(ip_data) < 3:
-        print("[🧠 ML Engine] Waiting for more unique IP traffic to build baseline...")
-        return
-
+    # Inject fake traffic baseline
+    ip_data["192.168.1.99"] = 2   
+    ip_data["192.168.1.150"] = 4  
+    
     ips = list(ip_data.keys())
     features = np.array(list(ip_data.values())).reshape(-1, 1)
 
     # Initialize Isolation Forest anomaly detection
-    model = IsolationForest(contamination=0.05, random_state=42)
+    model = IsolationForest(contamination=0.2, random_state=42)
     predictions = model.fit_predict(features)
 
     for idx, pred in enumerate(predictions):
-        # If an IP's traffic volume is a massive outlier compared to the baseline
-        if pred == -1 and features[idx][0] > 20: 
-            bad_ip = ips[idx]
-            # Skip banning our fake baseline IPs
-            if bad_ip in ["192.168.1.99", "192.168.1.150"]:
-                continue
-                
-            print(f"[🚨 ML SHIELD] Outlier Detected! Banning IP: {bad_ip} (Requests: {features[idx][0]})")
-            # Store ban in Redis for 5 minutes (300 seconds)
-            r.setex(f"ban:{bad_ip}", 300, "1")
+        current_ip = ips[idx]
+        request_count = features[idx][0]
+        
+        # Skip evaluating our fake baseline users
+        if current_ip in ["192.168.1.99", "192.168.1.150"]:
+            continue
+            
+        # 🚨 BAN TRIGGER: If ML flags it as an anomaly OR if it exceeds 20 requests
+        if pred == -1 or request_count > 20: 
+            print(f"[🚨 ML SHIELD] Outlier Detected! Banning IP: {current_ip} (Requests: {request_count})")
+            r.setex(f"ban:{current_ip}", 300, "1")
 
 if __name__ == "__main__":
     print("[🚀 ML Engine] DDoS Detection Service Started. Monitoring logs...")
     while True:
         run_ml_defense()
-        time.sleep(10)  # Run evaluation every 10 seconds
+        time.sleep(10)  # Evaluate every 10 seconds
